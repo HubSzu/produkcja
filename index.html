@@ -123,10 +123,12 @@ table.grid thead th{position:sticky;top:0;background:var(--panel);z-index:2;padd
       <button data-v="board" class="active" onclick="setView('board')">Tablica tygodnia</button>
       <button data-v="day" onclick="setView('day')">Plan na dzień</button>
       <button data-v="proj" onclick="setView('proj')">Projekty</button>
+      <button data-v="team" onclick="setView('team')">Zespół</button>
     </div>
     <div class="view active" id="view-board"></div>
     <div class="view" id="view-day"></div>
     <div class="view" id="view-proj"></div>
+    <div class="view" id="view-team"></div>
   </div>
 </div>
 
@@ -155,6 +157,26 @@ table.grid thead th{position:sticky;top:0;background:var(--panel);z-index:2;padd
   </div>
   <div class="mf"><button class="btn ghost" id="tDelete" style="color:var(--err)" onclick="deleteTask()">Usuń</button>
     <div class="row"><button class="btn" onclick="closeTask()">Anuluj</button><button class="btn primary" id="tSave" onclick="saveTask()">Zapisz</button></div></div>
+</div></div>
+
+<!-- worker modal -->
+<div class="overlay" id="wOverlay"><div class="modal">
+  <h3 id="wTitle">Pracownik</h3>
+  <div class="mb">
+    <div class="field"><label>Imię i nazwisko</label><input id="wName" placeholder="np. Piotr Głodzik" oninput="autoLogin()"></div>
+    <div class="f2">
+      <div class="field"><label>Login (ImięL)</label><input id="wLogin" placeholder="np. PiotrG"></div>
+      <div class="field"><label>Dział</label><select id="wDzial"><option>Produkcja</option><option>Montaż</option></select></div>
+    </div>
+    <div class="field"><label>Stanowisko</label><input id="wStan" placeholder="np. Spawacz"></div>
+    <div class="f2">
+      <div class="field"><label>PIN (4 cyfry, opcjonalnie)</label><input id="wPin" type="text" inputmode="numeric" maxlength="6" placeholder="np. 1234"></div>
+      <div class="field"><label>Aktywny</label><select id="wAkt"><option value="tak">Tak</option><option value="nie">Nie</option></select></div>
+    </div>
+    <p class="muted" style="font-size:11.5px">PIN jest zapisywany jako bezpieczny skrót (hash), nie jako jawna liczba. Zostaw puste, jeśli ustawicie PIN-y później.</p>
+  </div>
+  <div class="mf"><button class="btn ghost" id="wDelete" style="color:var(--err)" onclick="deleteWorker()">Usuń</button>
+    <div class="row"><button class="btn" onclick="closeWorker()">Anuluj</button><button class="btn primary" id="wSave" onclick="saveWorker()">Zapisz</button></div></div>
 </div></div>
 <div class="toast" id="toast"></div>
 
@@ -242,8 +264,8 @@ async function boot(){
     workers=[];
     if(lists['Pracownicy_Produkcji']){
       var w = await listItems(siteId,lists['Pracownicy_Produkcji']);
-      workers = w.filter(function(x){ return x.Title && x.Aktywny!==false; })
-                 .map(function(x){ return {login:x.Title, name:x.ImieNazwisko||x.Title, dzial:x.Dzial||'Produkcja', stanowisko:x.Stanowisko||''}; });
+      workers = w.filter(function(x){ return x.Title; })
+                 .map(function(x){ return {_id:x._id, login:x.Title, name:x.ImieNazwisko||x.Title, dzial:x.Dzial||'Produkcja', stanowisko:x.Stanowisko||'', aktywny:x.Aktywny!==false, haspin:!!x.PINHash}; });
       workers.sort(function(a,b){ if(a.dzial!==b.dzial) return a.dzial==='Produkcja'?-1:1; return a.name.localeCompare(b.name); });
     }
     // czynności
@@ -256,7 +278,7 @@ async function boot(){
     await loadTasks();
     try{ docSiteId = await getSiteId(DOC_PATH); }catch(e){ docSiteId=null; }
     var openP = projects.filter(isOpen).length;
-    setStatus('ok','Połączono — '+openP+' otwartych projektów, '+workers.length+' pracowników'+(MISSING.length?' · UWAGA: brak list '+MISSING.join(', '):''));
+    setStatus('ok','Połączono — '+openP+' otwartych projektów, '+activeWorkers().length+' pracowników'+(MISSING.length?' · UWAGA: brak list '+MISSING.join(', '):''));
     render();
   }catch(e){ setStatus('err','Błąd: '+e.message); }
 }
@@ -281,10 +303,11 @@ function colorFor(n){ var h=0; n=String(n||''); for(var i=0;i<n.length;i++) h=(h
 function statusClass(s){ s=s||''; if(s==='W toku')return'wip'; if(s==='Gotowe')return'done'; if(s==='Wstrzymane')return'hold'; return'todo'; }
 
 // ====== render ======
+function activeWorkers(){ return workers.filter(function(w){ return w.aktywny; }); }
 function setView(v){ view=v; document.querySelectorAll('.tabs button').forEach(function(b){b.classList.toggle('active',b.dataset.v===v);});
   document.querySelectorAll('.view').forEach(function(e){e.classList.remove('active');});
   document.getElementById('view-'+v).classList.add('active'); render(); }
-function render(){ if(view==='board')renderBoard(); else if(view==='day')renderDay(); else renderProj(); }
+function render(){ if(view==='board')renderBoard(); else if(view==='day')renderDay(); else if(view==='proj')renderProj(); else if(view==='team')renderTeam(); }
 function weekDays(){ var a=[]; for(var i=0;i<5;i++)a.push(addDays(weekStart,i)); return a; }
 
 function renderBoard(){
@@ -297,9 +320,10 @@ function renderBoard(){
   h+="<div class='board'><table class='grid'><thead><tr><th class='stcol'>Pracownik</th>";
   days.forEach(function(d){ h+="<th><div class='dayhdr'><b>"+DAYS_SHORT[d.getDay()]+"</b> <span class='dn'>"+d.getDate()+"."+String(d.getMonth()+1).padStart(2,'0')+"</span></div></th>"; });
   h+="</tr></thead><tbody>";
-  if(!workers.length) h+="<tr><td colspan='6' style='padding:20px' class='muted'>Brak pracowników — wpisz osoby do listy Pracownicy_Produkcji.</td></tr>";
+  var aw=activeWorkers();
+  if(!aw.length) h+="<tr><td colspan='6' style='padding:20px' class='muted'>Brak pracowników — dodaj osoby w zakładce <b>Zespół</b>.</td></tr>";
   var cur=null;
-  workers.forEach(function(w){
+  aw.forEach(function(w){
     if(w.dzial!==cur){ cur=w.dzial; h+="<tr class='teamrow "+(w.dzial==='Montaż'?'mont':'')+"'><td colspan='6'>"+esc(w.dzial)+"</td></tr>"; }
     h+="<tr><td class='stcol'><div class='nm'>"+esc(w.name)+"</div><div class='role'>"+esc(w.stanowisko)+"</div></td>";
     days.forEach(function(d){ var iso=fmtISO(d);
@@ -329,7 +353,7 @@ function renderDay(){
   var h="<div class='row' style='margin-bottom:10px'><button class='btn sm' onclick='dy(-1)'>‹</button><input type='date' class='btn sm' id='dDate' value='"+dayISO+"' onchange='dySet(this.value)'><button class='btn sm' onclick='dy(1)'>›</button><button class='btn sm' onclick='dyTomorrow()'>Jutro</button>"+
     "<b style='margin-left:8px'>"+DAYS_SHORT[d.getDay()]+" "+d.getDate()+" "+MONTHS[d.getMonth()]+"</b><span style='flex:1'></span><button class='btn sm' onclick='copyDay()'>📋 Kopiuj dla lidera</button></div>";
   h+="<div class='daygrid'>"; var cur=null;
-  workers.forEach(function(w){
+  activeWorkers().forEach(function(w){
     var list=tasks.filter(function(t){return t.PracownikLogin===w.login && taskDate(t)===dayISO;});
     if(w.dzial!==cur){ cur=w.dzial; h+="<div class='dayhdr-team "+(w.dzial==='Montaż'?'mont':'')+"'>"+esc(w.dzial)+"</div>"; }
     h+="<div class='daycol'><h4><span>"+esc(w.name)+"</span><span class='role'>"+esc(w.stanowisko)+"</span></h4><div class='body'>";
@@ -346,7 +370,7 @@ function dySet(v){ if(v){ dayISO=v; renderDay(); } }
 function dyTomorrow(){ dayISO=isoAdd(1); renderDay(); }
 function copyDay(){
   var d=parseISO(dayISO); var out="PLAN — "+DAYS_SHORT[d.getDay()]+" "+d.getDate()+" "+MONTHS[d.getMonth()]+" "+d.getFullYear()+"\n"; var cur=null;
-  workers.forEach(function(w){ var list=tasks.filter(function(t){return t.PracownikLogin===w.login && taskDate(t)===dayISO;}); if(!list.length)return;
+  activeWorkers().forEach(function(w){ var list=tasks.filter(function(t){return t.PracownikLogin===w.login && taskDate(t)===dayISO;}); if(!list.length)return;
     if(w.dzial!==cur){cur=w.dzial; out+="\n— "+w.dzial.toUpperCase()+" —\n";}
     list.forEach(function(t){ out+="• "+w.name+": "+(t.NumerProjektu?'['+t.NumerProjektu+'] ':'')+t.Title+(t.PlanowanaIlosc?' ('+t.PlanowanaIlosc+' '+(t.Jednostka||'szt')+')':'')+(t.SzacGodziny?' '+t.SzacGodziny+'h':'')+(t.Status==='Wstrzymane'?' [WSTRZYMANE]':'')+"\n"; });
   });
@@ -374,6 +398,85 @@ async function openDocs(numer){
     else toast('Nie znaleziono folderu dla '+numer,'err');
   }catch(e){ toast('Błąd wyszukiwania dokumentacji','err'); }
 }
+
+// ====== ZESPÓŁ (pracownicy) ======
+var editWorker=null;
+function renderTeam(){
+  var el=document.getElementById('view-team');
+  var h="<div class='row' style='margin-bottom:10px'><b>Zespół ("+workers.length+")</b><span style='flex:1'></span>"+
+    "<button class='btn sm' onclick='reloadAll()'>↻ Odśwież</button><button class='btn sm primary' onclick='newWorker()'>+ Dodaj pracownika</button></div>";
+  if(!lists['Pracownicy_Produkcji']){ el.innerHTML=h+"<div class='setupbox'>Brak listy Pracownicy_Produkcji.</div>"; return; }
+  h+="<div class='panel' style='overflow:hidden'><table class='ptable'><thead><tr><th>Imię i nazwisko</th><th>Login</th><th>Dział</th><th>Stanowisko</th><th>PIN</th><th>Aktywny</th><th></th></tr></thead><tbody>";
+  if(!workers.length) h+="<tr><td colspan='7' style='text-align:center;padding:22px' class='muted'>Brak pracowników. Kliknij „+ Dodaj pracownika”.</td></tr>";
+  var cur=null;
+  workers.forEach(function(w){
+    if(w.dzial!==cur){ cur=w.dzial; h+="<tr><td colspan='7' style='background:"+(w.dzial==='Montaż'?'var(--montbg)':'var(--prodbg)')+";color:"+(w.dzial==='Montaż'?'var(--mont)':'var(--prod)')+";font-weight:800;font-size:11px;letter-spacing:1px;text-transform:uppercase;padding:5px 9px'>"+esc(w.dzial)+"</td></tr>"; }
+    h+="<tr"+(w.aktywny?'':" style='opacity:.5'")+"><td><b>"+esc(w.name)+"</b></td><td class='muted'>"+esc(w.login)+"</td><td>"+esc(w.dzial)+"</td><td>"+esc(w.stanowisko||'—')+"</td>"+
+      "<td>"+(w.haspin?'<span class=\"chip done\">ustawiony</span>':'<span class=\"muted\">—</span>')+"</td><td>"+(w.aktywny?'Tak':'Nie')+"</td>"+
+      "<td style='text-align:right'><button class='btn sm' onclick='openWorker(\""+w._id+"\")'>Edytuj</button></td></tr>";
+  });
+  h+="</tbody></table></div><p class='muted' style='font-size:12px;margin-top:8px'>Zmiany zapisują się od razu w SharePoint (lista Pracownicy_Produkcji). Po dodaniu osób wróć na „Tablica tygodnia”.</p>";
+  el.innerHTML=h;
+}
+function stripDia(s){ return (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/ł/g,'l').replace(/Ł/g,'L'); }
+function autoLogin(){
+  var li=document.getElementById('wLogin'); if(li.dataset.touched==='1') return;
+  var n=stripDia(document.getElementById('wName').value.trim()); var p=n.split(/\s+/);
+  if(p[0]){ var l=p[0].charAt(0).toUpperCase()+p[0].slice(1).toLowerCase(); if(p[1]) l+=p[1].charAt(0).toUpperCase(); li.value=l.replace(/[^A-Za-z0-9]/g,''); }
+}
+async function hashPin(login,pin){
+  var data=new TextEncoder().encode(login+':'+pin);
+  var buf=await crypto.subtle.digest('SHA-256',data);
+  return Array.from(new Uint8Array(buf)).map(function(b){return b.toString(16).padStart(2,'0');}).join('');
+}
+function newWorker(){
+  editWorker=null; document.getElementById('wTitle').textContent='Nowy pracownik';
+  document.getElementById('wName').value=''; document.getElementById('wLogin').value=''; document.getElementById('wLogin').dataset.touched='';
+  document.getElementById('wDzial').value='Produkcja'; document.getElementById('wStan').value='';
+  document.getElementById('wPin').value=''; document.getElementById('wAkt').value='tak';
+  document.getElementById('wDelete').style.display='none';
+  document.getElementById('wOverlay').classList.add('open');
+  document.getElementById('wLogin').oninput=function(){this.dataset.touched='1';};
+}
+function openWorker(id){
+  var w=workers.filter(function(x){return x._id===id;})[0]; if(!w)return; editWorker=w;
+  document.getElementById('wTitle').textContent='Edytuj pracownika';
+  document.getElementById('wName').value=w.name||''; document.getElementById('wLogin').value=w.login||''; document.getElementById('wLogin').dataset.touched='1';
+  document.getElementById('wDzial').value=w.dzial||'Produkcja'; document.getElementById('wStan').value=w.stanowisko||'';
+  document.getElementById('wPin').value=''; document.getElementById('wAkt').value=w.aktywny?'tak':'nie';
+  document.getElementById('wDelete').style.display='';
+  document.getElementById('wOverlay').classList.add('open');
+}
+function closeWorker(){ document.getElementById('wOverlay').classList.remove('open'); }
+async function saveWorker(){
+  var name=document.getElementById('wName').value.trim();
+  var login=document.getElementById('wLogin').value.trim();
+  if(!name||!login){ toast('Podaj imię i login','err'); return; }
+  var dup=workers.filter(function(w){ return w.login.toLowerCase()===login.toLowerCase() && (!editWorker||w._id!==editWorker._id); }).length;
+  if(dup){ toast('Login „'+login+'" już istnieje','err'); return; }
+  var f={ Title:login, ImieNazwisko:name, Dzial:document.getElementById('wDzial').value, Stanowisko:document.getElementById('wStan').value.trim(), Aktywny:document.getElementById('wAkt').value==='tak' };
+  var pin=document.getElementById('wPin').value.trim();
+  var btn=document.getElementById('wSave'); btn.disabled=true; btn.textContent='Zapisywanie…';
+  try{
+    if(pin) f.PINHash=await hashPin(login,pin);
+    if(editWorker){ await gPatch('/sites/'+siteId+'/lists/'+lists['Pracownicy_Produkcji']+'/items/'+editWorker._id+'/fields', f); }
+    else{ await gPost('/sites/'+siteId+'/lists/'+lists['Pracownicy_Produkcji']+'/items', {fields:f}); }
+    closeWorker(); await reloadWorkers(); render(); toast('Zapisano pracownika','ok');
+  }catch(e){ toast('Błąd zapisu: '+e.message,'err'); }
+  btn.disabled=false; btn.textContent='Zapisz';
+}
+async function deleteWorker(){
+  if(!editWorker) return; if(!confirm('Usunąć pracownika '+editWorker.name+'? (lepiej zamiast tego ustawić Aktywny = Nie)')) return;
+  try{ await gDelete('/sites/'+siteId+'/lists/'+lists['Pracownicy_Produkcji']+'/items/'+editWorker._id); closeWorker(); await reloadWorkers(); render(); toast('Usunięto','ok'); }
+  catch(e){ toast('Błąd usuwania','err'); }
+}
+async function reloadWorkers(){
+  var w = await listItems(siteId,lists['Pracownicy_Produkcji']);
+  workers = w.filter(function(x){ return x.Title; })
+             .map(function(x){ return {_id:x._id, login:x.Title, name:x.ImieNazwisko||x.Title, dzial:x.Dzial||'Produkcja', stanowisko:x.Stanowisko||'', aktywny:x.Aktywny!==false, haspin:!!x.PINHash}; });
+  workers.sort(function(a,b){ if(a.dzial!==b.dzial) return a.dzial==='Produkcja'?-1:1; return a.name.localeCompare(b.name); });
+}
+async function reloadAll(){ setStatus('load','Odświeżanie…'); await reloadWorkers(); await loadTasks(); setStatus('ok','Zaktualizowano'); render(); }
 
 // ====== task modal ======
 function fillSel(id,arr,val){ var s=document.getElementById(id); s.innerHTML=''; arr.forEach(function(o){ var op=document.createElement('option'); op.value=o.v; op.textContent=o.t; if(o.v===val)op.selected=true; s.appendChild(op); }); }
