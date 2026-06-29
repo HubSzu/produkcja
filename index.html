@@ -99,6 +99,21 @@ table.grid thead th{position:sticky;top:0;background:var(--panel);z-index:2;padd
 .toast.show{display:block}.toast.ok{background:var(--okbg);color:var(--ok)} .toast.err{background:var(--errbg);color:var(--err)} .toast.info{background:var(--wipbg);color:var(--wip)}
 .setupbox{background:var(--warnbg);border:1px solid #f0d9a8;border-radius:10px;padding:14px 16px;margin-bottom:14px;font-size:13px}
 .setupbox b{color:#8a5a12}
+/* wydruk kartek zadań */
+#printArea{position:fixed;left:-10000px;top:0}
+.pslip{page-break-after:always;padding:4px 2px;color:#000}
+.pslip:last-child{page-break-after:auto}
+.ph{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:10px}
+.pname{font-size:21px;font-weight:800}
+.prole{font-size:12px;color:#444}
+.pdate{font-size:13px;font-weight:600;text-align:right}
+.pbrand{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#666}
+.ptab{width:100%;border-collapse:collapse;font-size:12px}
+.ptab th,.ptab td{border:1px solid #888;padding:6px 7px;text-align:left;vertical-align:top}
+.ptab th{background:#eee;font-size:11px}
+.ptab .psm{font-size:10px;color:#555}
+.psig{margin-top:22px;font-size:12px;color:#333}
+@media print{ .hdr,.status,.wrap,.overlay,.toast{display:none!important} #printArea{position:static;left:0} body{background:#fff} }
 </style>
 </head>
 <body>
@@ -197,6 +212,7 @@ table.grid thead th{position:sticky;top:0;background:var(--panel);z-index:2;padd
     <div class="row"><button class="btn" onclick="closeMachine()">Anuluj</button><button class="btn primary" id="mSave" onclick="saveMachine()">Zapisz</button></div></div>
 </div></div>
 <div class="toast" id="toast"></div>
+<div id="printArea"></div>
 
 <script>
 // Definicje startowe MUSZĄ powstać PRZED załadowaniem MSAL — inaczej onload nie ma czego wywołać i init utyka.
@@ -388,7 +404,7 @@ async function reloadTasks(){ setStatus('load','Odświeżanie…'); await loadTa
 function renderDay(){
   var el=document.getElementById('view-day'); var d=parseISO(dayISO);
   var h="<div class='row' style='margin-bottom:10px'><button class='btn sm' onclick='dy(-1)'>‹</button><input type='date' class='btn sm' id='dDate' value='"+dayISO+"' onchange='dySet(this.value)'><button class='btn sm' onclick='dy(1)'>›</button><button class='btn sm' onclick='dyTomorrow()'>Jutro</button>"+
-    "<b style='margin-left:8px'>"+DAYS_SHORT[d.getDay()]+" "+d.getDate()+" "+MONTHS[d.getMonth()]+"</b><span style='flex:1'></span><button class='btn sm' onclick='copyDay()'>📋 Kopiuj dla lidera</button></div>";
+    "<b style='margin-left:8px'>"+DAYS_SHORT[d.getDay()]+" "+d.getDate()+" "+MONTHS[d.getMonth()]+"</b><span style='flex:1'></span><button class='btn sm' onclick='copyDay()'>📋 Kopiuj dla lidera</button><button class='btn sm primary' onclick='printDay()'>🖨 Drukuj zadania</button></div>";
   h+="<div class='daygrid'>"; var cur=null;
   activeWorkers().forEach(function(w){
     var list=tasks.filter(function(t){return t.PracownikLogin===w.login && taskDate(t)===dayISO;});
@@ -401,6 +417,23 @@ function renderDay(){
   });
   h+="</div>";
   el.innerHTML=h;
+}
+function printDay(){
+  var d=parseISO(dayISO); var dateStr=DAYS_SHORT[d.getDay()]+' '+d.getDate()+' '+MONTHS[d.getMonth()]+' '+d.getFullYear();
+  var any=false, h='';
+  activeWorkers().forEach(function(w){
+    var list=tasks.filter(function(t){ return t.PracownikLogin===w.login && taskDate(t)===dayISO; });
+    if(!list.length) return; any=true;
+    h+="<div class='pslip'><div class='ph'><div><div class='pbrand'>Structura360 · plan dnia</div><div class='pname'>"+esc(w.name)+"</div><div class='prole'>"+esc(w.stanowisko||'')+"</div></div><div class='pdate'>"+esc(dateStr)+"</div></div>";
+    h+="<table class='ptab'><thead><tr><th>Lp</th><th>Projekt</th><th>Czynność</th><th>Zadanie</th><th>Plan ilość</th><th>Godz.</th><th>Wykonano</th><th>Uwagi</th></tr></thead><tbody>";
+    list.forEach(function(t,i){ var p=projByNum(t.NumerProjektu);
+      h+="<tr><td>"+(i+1)+"</td><td>"+esc(t.NumerProjektu||'')+(p?"<div class='psm'>"+esc(p.Nazwa||'')+"</div>":'')+"</td><td>"+esc(t.Czynnosc||'')+"</td><td>"+esc(t.Title||'')+"</td><td>"+(t.PlanowanaIlosc?esc(t.PlanowanaIlosc+' '+(t.Jednostka||'szt')):'—')+"</td><td>"+(t.SzacGodziny||'—')+"</td><td></td><td></td></tr>";
+    });
+    h+="</tbody></table><div class='psig'>Uwagi do dnia: ............................................................................................................<br><br>Podpis pracownika: ............................................</div></div>";
+  });
+  if(!any){ toast('Brak zadań na ten dzień do wydruku','info'); return; }
+  document.getElementById('printArea').innerHTML=h;
+  window.print();
 }
 function dy(n){ dayISO=isoAddFrom(dayISO,n); renderDay(); }
 function dySet(v){ if(v){ dayISO=v; renderDay(); } }
