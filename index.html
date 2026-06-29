@@ -158,6 +158,13 @@ table.grid thead th{position:sticky;top:0;background:var(--panel);z-index:2;padd
 </div></div>
 <div class="toast" id="toast"></div>
 
+<script>
+// Definicje startowe MUSZĄ powstać PRZED załadowaniem MSAL — inaczej onload nie ma czego wywołać i init utyka.
+var msalLoaded=false, domReady=false;
+function tryInit(){ if(msalLoaded&&domReady&&typeof initAuth==='function') initAuth(); }
+function setStatus(c,t){ var d=document.getElementById('sdot'),x=document.getElementById('stext'); if(d)d.className='dot '+(c||''); if(x)x.textContent=t; }
+function msalErr(){ setStatus('err','Błąd ładowania biblioteki logowania — odśwież stronę.'); }
+</script>
 <script src="https://unpkg.com/@azure/msal-browser@3.28.1/lib/msal-browser.min.js" onload="msalLoaded=true;tryInit()" onerror="msalErr()"></script>
 <script>
 "use strict";
@@ -173,11 +180,8 @@ var ACT_FALLBACK = ['Cięcie laser','Gięcie / zaginanie','Gięcie profili','Szl
 var DAYS_SHORT=["Nd","Pn","Wt","Śr","Cz","Pt","Sb"];
 var MONTHS=["stycznia","lutego","marca","kwietnia","maja","czerwca","lipca","sierpnia","września","października","listopada","grudnia"];
 
-// ====== MSAL ======
-var msalLoaded=false, domReady=false, msal2=null, account=null;
-function tryInit(){ if(msalLoaded&&domReady) initAuth(); }
-function msalErr(){ setStatus('err','Błąd ładowania biblioteki logowania — odśwież stronę.'); }
-function setStatus(c,t){ var d=document.getElementById('sdot'),x=document.getElementById('stext'); d.className='dot '+(c||''); x.textContent=t; }
+// ====== MSAL ====== (msalLoaded, domReady, tryInit, setStatus, msalErr są zdefiniowane wyżej, przed MSAL)
+var msal2=null, account=null;
 var msalConfig={ auth:{ clientId:CLIENT_ID, authority:'https://login.microsoftonline.com/'+TENANT_ID, redirectUri:window.location.href.split('?')[0].split('#')[0] }, cache:{ cacheLocation:'sessionStorage' } };
 
 async function initAuth(){
