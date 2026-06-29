@@ -124,11 +124,13 @@ table.grid thead th{position:sticky;top:0;background:var(--panel);z-index:2;padd
       <button data-v="day" onclick="setView('day')">Plan na dzień</button>
       <button data-v="proj" onclick="setView('proj')">Projekty</button>
       <button data-v="team" onclick="setView('team')">Zespół</button>
+      <button data-v="mach" onclick="setView('mach')">Maszyny</button>
     </div>
     <div class="view active" id="view-board"></div>
     <div class="view" id="view-day"></div>
     <div class="view" id="view-proj"></div>
     <div class="view" id="view-team"></div>
+    <div class="view" id="view-mach"></div>
   </div>
 </div>
 
@@ -173,10 +175,26 @@ table.grid thead th{position:sticky;top:0;background:var(--panel);z-index:2;padd
       <div class="field"><label>PIN (4 cyfry, opcjonalnie)</label><input id="wPin" type="text" inputmode="numeric" maxlength="6" placeholder="np. 1234"></div>
       <div class="field"><label>Aktywny</label><select id="wAkt"><option value="tak">Tak</option><option value="nie">Nie</option></select></div>
     </div>
+    <div class="field"><label>Obsługiwane maszyny (kompetencje)</label><div id="wMach" style="display:flex;flex-direction:column;gap:5px;border:1px solid var(--line);border-radius:8px;padding:9px 11px;max-height:170px;overflow:auto"></div></div>
     <p class="muted" style="font-size:11.5px">PIN jest zapisywany jako bezpieczny skrót (hash), nie jako jawna liczba. Zostaw puste, jeśli ustawicie PIN-y później.</p>
   </div>
   <div class="mf"><button class="btn ghost" id="wDelete" style="color:var(--err)" onclick="deleteWorker()">Usuń</button>
     <div class="row"><button class="btn" onclick="closeWorker()">Anuluj</button><button class="btn primary" id="wSave" onclick="saveWorker()">Zapisz</button></div></div>
+</div></div>
+
+<!-- machine modal -->
+<div class="overlay" id="mOverlay"><div class="modal">
+  <h3 id="mTitle">Maszyna</h3>
+  <div class="mb">
+    <div class="field"><label>Nazwa</label><input id="mName" placeholder="np. Wycinarka laserowa"></div>
+    <div class="field"><label>Model</label><input id="mModel" placeholder="np. AMADA Ensis 3015 AJ"></div>
+    <div class="f2">
+      <div class="field"><label>Czynność</label><select id="mCzyn"></select></div>
+      <div class="field"><label>Aktywna</label><select id="mAkt"><option value="tak">Tak</option><option value="nie">Nie</option></select></div>
+    </div>
+  </div>
+  <div class="mf"><button class="btn ghost" id="mDelete" style="color:var(--err)" onclick="deleteMachine()">Usuń</button>
+    <div class="row"><button class="btn" onclick="closeMachine()">Anuluj</button><button class="btn primary" id="mSave" onclick="saveMachine()">Zapisz</button></div></div>
 </div></div>
 <div class="toast" id="toast"></div>
 
@@ -199,6 +217,16 @@ var DOC_PATH    = '/sites/ProjektyS360';            // dokumentacja
 var GRAPH = 'https://graph.microsoft.com/v1.0';
 var loginRequest = { scopes:['https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/Files.ReadWrite.All','https://graph.microsoft.com/User.Read'] };
 var ACT_FALLBACK = ['Cięcie laser','Gięcie / zaginanie','Gięcie profili','Szlifowanie','Spawanie','Obróbka CNC alu','Frezowanie / ploter','Cięcie piłą alu','Cięcie piłą stal','Montaż na hali','Montaż w terenie','Pakowanie','Inne'];
+var SEED_MACHINES = [
+  {name:'Wycinarka laserowa', model:'AMADA Ensis 3015 AJ', czynnosc:'Cięcie laser'},
+  {name:'Prasa krawędziowa', model:'BOSCHERT G-BEND PLUS 3210', czynnosc:'Gięcie / zaginanie'},
+  {name:'Nożyce gilotynowe', model:'BOSCHERT G-CUT 3013', czynnosc:'Cięcie blach'},
+  {name:'Centrum 5-osiowe profili', model:'ELUMATEC SBZ 150 eluCam', czynnosc:'Obróbka CNC alu'},
+  {name:'Centrum 3-osiowe profili', model:'ELUMATEC SBZ 122/33 eluCam', czynnosc:'Obróbka CNC alu'},
+  {name:'Frezarka CNC / ploter', model:'AXYZ 6010', czynnosc:'Frezowanie / ploter'},
+  {name:'Piła dwugłowicowa', model:'ELUMATEC DG 104', czynnosc:'Cięcie piłą alu'},
+  {name:'Giętarko-walcarka do profili', model:'PBT25 PC400 (PBT AG, Szwajcaria)', czynnosc:'Gięcie profili'}
+];
 var DAYS_SHORT=["Nd","Pn","Wt","Śr","Cz","Pt","Sb"];
 var MONTHS=["stycznia","lutego","marca","kwietnia","maja","czerwca","lipca","sierpnia","września","października","listopada","grudnia"];
 
@@ -243,8 +271,8 @@ async function getListId(siteId,name){ var d=await gGet('/sites/'+siteId+"/lists
 async function listItems(siteId,listId,select){ var d=await gGet('/sites/'+siteId+'/lists/'+listId+'/items?$expand=fields'+(select?'($select='+select+')':'')+'&$top=500'); return (d.value||[]).map(function(i){ var f=i.fields||{}; f._id=i.id; return f; }); }
 
 // ====== STATE ======
-var siteId=null, docSiteId=null, lists={}, projects=[], workers=[], acts=[], tasks=[];
-var weekStart=null, dayISO=null, view='board', editTask=null, tStatus='Do zrobienia';
+var siteId=null, docSiteId=null, lists={}, projects=[], workers=[], acts=[], tasks=[], machines=[];
+var weekStart=null, dayISO=null, view='board', editTask=null, tStatus='Do zrobienia', editMachine=null;
 var MISSING=[];
 
 async function boot(){
@@ -254,6 +282,15 @@ async function boot(){
     MISSING=[];
     for(var i=0;i<need.length;i++){ lists[need[i]] = await getListId(siteId, need[i]); if(!lists[need[i]]) MISSING.push(need[i]); }
     lists['Logi_Czasu'] = await getListId(siteId,'Logi_Czasu');
+    lists['Maszyny'] = await getListId(siteId,'Maszyny');
+    // maszyny
+    machines=[];
+    if(lists['Maszyny']){
+      var ms = await listItems(siteId,lists['Maszyny']);
+      machines = ms.filter(function(x){ return x.Title; })
+                   .map(function(x){ return {_id:x._id, name:x.Title, model:x.Model||'', czynnosc:x.Czynnosc||'', aktywna:x.Aktywna!==false}; });
+      machines.sort(function(a,b){ return a.name.localeCompare(b.name); });
+    }
     // projekty
     projects=[];
     if(lists['Lista_Projektow']){
@@ -265,7 +302,7 @@ async function boot(){
     if(lists['Pracownicy_Produkcji']){
       var w = await listItems(siteId,lists['Pracownicy_Produkcji']);
       workers = w.filter(function(x){ return x.Title; })
-                 .map(function(x){ return {_id:x._id, login:x.Title, name:x.ImieNazwisko||x.Title, dzial:x.Dzial||'Produkcja', stanowisko:x.Stanowisko||'', aktywny:x.Aktywny!==false, haspin:!!x.PINHash}; });
+                 .map(mapWorker);
       workers.sort(function(a,b){ if(a.dzial!==b.dzial) return a.dzial==='Produkcja'?-1:1; return a.name.localeCompare(b.name); });
     }
     // czynności
@@ -307,7 +344,7 @@ function activeWorkers(){ return workers.filter(function(w){ return w.aktywny; }
 function setView(v){ view=v; document.querySelectorAll('.tabs button').forEach(function(b){b.classList.toggle('active',b.dataset.v===v);});
   document.querySelectorAll('.view').forEach(function(e){e.classList.remove('active');});
   document.getElementById('view-'+v).classList.add('active'); render(); }
-function render(){ if(view==='board')renderBoard(); else if(view==='day')renderDay(); else if(view==='proj')renderProj(); else if(view==='team')renderTeam(); }
+function render(){ if(view==='board')renderBoard(); else if(view==='day')renderDay(); else if(view==='proj')renderProj(); else if(view==='team')renderTeam(); else if(view==='mach')renderMachines(); }
 function weekDays(){ var a=[]; for(var i=0;i<5;i++)a.push(addDays(weekStart,i)); return a; }
 
 function renderBoard(){
@@ -406,12 +443,14 @@ function renderTeam(){
   var h="<div class='row' style='margin-bottom:10px'><b>Zespół ("+workers.length+")</b><span style='flex:1'></span>"+
     "<button class='btn sm' onclick='reloadAll()'>↻ Odśwież</button><button class='btn sm primary' onclick='newWorker()'>+ Dodaj pracownika</button></div>";
   if(!lists['Pracownicy_Produkcji']){ el.innerHTML=h+"<div class='setupbox'>Brak listy Pracownicy_Produkcji.</div>"; return; }
-  h+="<div class='panel' style='overflow:hidden'><table class='ptable'><thead><tr><th>Imię i nazwisko</th><th>Login</th><th>Dział</th><th>Stanowisko</th><th>PIN</th><th>Aktywny</th><th></th></tr></thead><tbody>";
-  if(!workers.length) h+="<tr><td colspan='7' style='text-align:center;padding:22px' class='muted'>Brak pracowników. Kliknij „+ Dodaj pracownika”.</td></tr>";
+  h+="<div class='panel' style='overflow:hidden'><table class='ptable'><thead><tr><th>Imię i nazwisko</th><th>Login</th><th>Dział</th><th>Stanowisko</th><th>Maszyny</th><th>PIN</th><th>Aktywny</th><th></th></tr></thead><tbody>";
+  if(!workers.length) h+="<tr><td colspan='8' style='text-align:center;padding:22px' class='muted'>Brak pracowników. Kliknij „+ Dodaj pracownika”.</td></tr>";
   var cur=null;
   workers.forEach(function(w){
-    if(w.dzial!==cur){ cur=w.dzial; h+="<tr><td colspan='7' style='background:"+(w.dzial==='Montaż'?'var(--montbg)':'var(--prodbg)')+";color:"+(w.dzial==='Montaż'?'var(--mont)':'var(--prod)')+";font-weight:800;font-size:11px;letter-spacing:1px;text-transform:uppercase;padding:5px 9px'>"+esc(w.dzial)+"</td></tr>"; }
+    if(w.dzial!==cur){ cur=w.dzial; h+="<tr><td colspan='8' style='background:"+(w.dzial==='Montaż'?'var(--montbg)':'var(--prodbg)')+";color:"+(w.dzial==='Montaż'?'var(--mont)':'var(--prod)')+";font-weight:800;font-size:11px;letter-spacing:1px;text-transform:uppercase;padding:5px 9px'>"+esc(w.dzial)+"</td></tr>"; }
+    var mtxt=(w.machines&&w.machines.length)? esc(w.machines.join(', ')) : '<span class="muted">—</span>';
     h+="<tr"+(w.aktywny?'':" style='opacity:.5'")+"><td><b>"+esc(w.name)+"</b></td><td class='muted'>"+esc(w.login)+"</td><td>"+esc(w.dzial)+"</td><td>"+esc(w.stanowisko||'—')+"</td>"+
+      "<td style='font-size:12px;max-width:240px'>"+mtxt+"</td>"+
       "<td>"+(w.haspin?'<span class=\"chip done\">ustawiony</span>':'<span class=\"muted\">—</span>')+"</td><td>"+(w.aktywny?'Tak':'Nie')+"</td>"+
       "<td style='text-align:right'><button class='btn sm' onclick='openWorker(\""+w._id+"\")'>Edytuj</button></td></tr>";
   });
@@ -434,6 +473,7 @@ function newWorker(){
   document.getElementById('wName').value=''; document.getElementById('wLogin').value=''; document.getElementById('wLogin').dataset.touched='';
   document.getElementById('wDzial').value='Produkcja'; document.getElementById('wStan').value='';
   document.getElementById('wPin').value=''; document.getElementById('wAkt').value='tak';
+  renderWorkerMachines([]);
   document.getElementById('wDelete').style.display='none';
   document.getElementById('wOverlay').classList.add('open');
   document.getElementById('wLogin').oninput=function(){this.dataset.touched='1';};
@@ -444,6 +484,7 @@ function openWorker(id){
   document.getElementById('wName').value=w.name||''; document.getElementById('wLogin').value=w.login||''; document.getElementById('wLogin').dataset.touched='1';
   document.getElementById('wDzial').value=w.dzial||'Produkcja'; document.getElementById('wStan').value=w.stanowisko||'';
   document.getElementById('wPin').value=''; document.getElementById('wAkt').value=w.aktywny?'tak':'nie';
+  renderWorkerMachines(w.machines||[]);
   document.getElementById('wDelete').style.display='';
   document.getElementById('wOverlay').classList.add('open');
 }
@@ -454,7 +495,7 @@ async function saveWorker(){
   if(!name||!login){ toast('Podaj imię i login','err'); return; }
   var dup=workers.filter(function(w){ return w.login.toLowerCase()===login.toLowerCase() && (!editWorker||w._id!==editWorker._id); }).length;
   if(dup){ toast('Login „'+login+'" już istnieje','err'); return; }
-  var f={ Title:login, ImieNazwisko:name, Dzial:document.getElementById('wDzial').value, Stanowisko:document.getElementById('wStan').value.trim(), Aktywny:document.getElementById('wAkt').value==='tak' };
+  var f={ Title:login, ImieNazwisko:name, Dzial:document.getElementById('wDzial').value, Stanowisko:document.getElementById('wStan').value.trim(), Aktywny:document.getElementById('wAkt').value==='tak', Maszyny:selectedMachines().join('; ') };
   var pin=document.getElementById('wPin').value.trim();
   var btn=document.getElementById('wSave'); btn.disabled=true; btn.textContent='Zapisywanie…';
   try{
@@ -470,13 +511,95 @@ async function deleteWorker(){
   try{ await gDelete('/sites/'+siteId+'/lists/'+lists['Pracownicy_Produkcji']+'/items/'+editWorker._id); closeWorker(); await reloadWorkers(); render(); toast('Usunięto','ok'); }
   catch(e){ toast('Błąd usuwania','err'); }
 }
+function mapWorker(x){ return {_id:x._id, login:x.Title, name:x.ImieNazwisko||x.Title, dzial:x.Dzial||'Produkcja', stanowisko:x.Stanowisko||'', aktywny:x.Aktywny!==false, haspin:!!x.PINHash, machines:(x.Maszyny||'').split(';').map(function(s){return s.trim();}).filter(Boolean)}; }
 async function reloadWorkers(){
   var w = await listItems(siteId,lists['Pracownicy_Produkcji']);
-  workers = w.filter(function(x){ return x.Title; })
-             .map(function(x){ return {_id:x._id, login:x.Title, name:x.ImieNazwisko||x.Title, dzial:x.Dzial||'Produkcja', stanowisko:x.Stanowisko||'', aktywny:x.Aktywny!==false, haspin:!!x.PINHash}; });
+  workers = w.filter(function(x){ return x.Title; }).map(mapWorker);
   workers.sort(function(a,b){ if(a.dzial!==b.dzial) return a.dzial==='Produkcja'?-1:1; return a.name.localeCompare(b.name); });
 }
-async function reloadAll(){ setStatus('load','Odświeżanie…'); await reloadWorkers(); await loadTasks(); setStatus('ok','Zaktualizowano'); render(); }
+async function reloadMachines(){
+  if(!lists['Maszyny']){ machines=[]; return; }
+  var ms = await listItems(siteId,lists['Maszyny']);
+  machines = ms.filter(function(x){ return x.Title; }).map(function(x){ return {_id:x._id, name:x.Title, model:x.Model||'', czynnosc:x.Czynnosc||'', aktywna:x.Aktywna!==false}; });
+  machines.sort(function(a,b){ return a.name.localeCompare(b.name); });
+}
+async function reloadAll(){ setStatus('load','Odświeżanie…'); await reloadMachines(); await reloadWorkers(); await loadTasks(); setStatus('ok','Zaktualizowano'); render(); }
+
+// checkboxy maszyn w formularzu pracownika
+function renderWorkerMachines(selected){
+  var box=document.getElementById('wMach'); selected=selected||[];
+  if(!machines.length){ box.innerHTML="<span class='muted' style='font-size:12px'>Brak maszyn — dodaj je w zakładce Maszyny.</span>"; return; }
+  box.innerHTML=machines.filter(function(m){return m.aktywna;}).map(function(m){
+    var on=selected.indexOf(m.name)!==-1;
+    return "<label style='display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer'><input type='checkbox' value='"+esc(m.name)+"' "+(on?'checked':'')+"> "+esc(m.name)+(m.model?" <span class='muted' style='font-size:11px'>("+esc(m.model)+")</span>":"")+"</label>";
+  }).join('');
+}
+function selectedMachines(){ return Array.prototype.slice.call(document.querySelectorAll('#wMach input:checked')).map(function(c){return c.value;}); }
+
+// ====== MASZYNY ======
+function workersForMachine(name){ return workers.filter(function(w){ return w.aktywny && w.machines && w.machines.indexOf(name)!==-1; }); }
+function renderMachines(){
+  var el=document.getElementById('view-mach');
+  var h="<div class='row' style='margin-bottom:10px'><b>Maszyny ("+machines.length+")</b><span style='flex:1'></span>"+
+    "<button class='btn sm' onclick='reloadAll()'>↻ Odśwież</button><button class='btn sm primary' onclick='newMachine()'>+ Dodaj maszynę</button></div>";
+  if(!lists['Maszyny']){ el.innerHTML=h+"<div class='setupbox'><b>Brak listy Maszyny.</b> Załóż listę <code>Maszyny</code> na site'cie Zarzdzanieprojektami (instrukcja w pliku setup).</div>"; return; }
+  if(!machines.length) h+="<div class='setupbox'>Lista maszyn jest pusta. Kliknij, by wczytać park maszynowy z katalogu (8 maszyn) — i tak je potem edytujesz.<br><br><button class='btn sm primary' id='seedBtn' onclick='seedMachines()'>↧ Wczytaj park maszynowy (8 maszyn)</button></div>";
+  h+="<div class='panel' style='overflow:hidden'><table class='ptable'><thead><tr><th>Nazwa</th><th>Model</th><th>Czynność</th><th>Operatorzy (kompetencje)</th><th>Aktywna</th><th></th></tr></thead><tbody>";
+  if(!machines.length) h+="<tr><td colspan='6' style='text-align:center;padding:22px' class='muted'>Brak maszyn.</td></tr>";
+  machines.forEach(function(m){
+    var ops=workersForMachine(m.name);
+    h+="<tr"+(m.aktywna?'':" style='opacity:.5'")+"><td><b>"+esc(m.name)+"</b></td><td class='muted'>"+esc(m.model||'—')+"</td><td>"+esc(m.czynnosc||'—')+"</td>"+
+      "<td style='font-size:12px'>"+(ops.length? ops.map(function(w){return esc(w.name);}).join(', ') : '<span class=\"muted\">— nikt nie przypisany</span>')+"</td>"+
+      "<td>"+(m.aktywna?'Tak':'Nie')+"</td><td style='text-align:right'><button class='btn sm' onclick='openMachine(\""+m._id+"\")'>Edytuj</button></td></tr>";
+  });
+  h+="</tbody></table></div><p class='muted' style='font-size:12px;margin-top:8px'>Operatorów przypisujesz w zakładce <b>Zespół</b> (edycja pracownika → checkboxy maszyn).</p>";
+  el.innerHTML=h;
+}
+async function seedMachines(){
+  if(!lists['Maszyny']){ toast('Najpierw załóż listę Maszyny','err'); return; }
+  var b=document.getElementById('seedBtn'); if(b){ b.disabled=true; b.textContent='Wczytywanie…'; }
+  try{
+    for(var i=0;i<SEED_MACHINES.length;i++){ var m=SEED_MACHINES[i];
+      await gPost('/sites/'+siteId+'/lists/'+lists['Maszyny']+'/items', {fields:{ Title:m.name, Model:m.model, Czynnosc:m.czynnosc, Aktywna:true }}); }
+    await reloadMachines(); render(); toast('Wczytano '+SEED_MACHINES.length+' maszyn','ok');
+  }catch(e){ toast('Błąd wczytywania: '+e.message,'err'); if(b){ b.disabled=false; b.textContent='↧ Wczytaj park maszynowy (8 maszyn)'; } }
+}
+function newMachine(){
+  if(!lists['Maszyny']){ toast('Najpierw załóż listę Maszyny','err'); return; }
+  editMachine=null; document.getElementById('mTitle').textContent='Nowa maszyna';
+  document.getElementById('mName').value=''; document.getElementById('mModel').value='';
+  fillSel('mCzyn', [{v:'',t:'—'}].concat(acts.map(function(a){return{v:a,t:a};})), '');
+  document.getElementById('mAkt').value='tak';
+  document.getElementById('mDelete').style.display='none';
+  document.getElementById('mOverlay').classList.add('open');
+}
+function openMachine(id){
+  var m=machines.filter(function(x){return x._id===id;})[0]; if(!m)return; editMachine=m;
+  document.getElementById('mTitle').textContent='Edytuj maszynę';
+  document.getElementById('mName').value=m.name||''; document.getElementById('mModel').value=m.model||'';
+  fillSel('mCzyn', [{v:'',t:'—'}].concat(acts.map(function(a){return{v:a,t:a};})), m.czynnosc||'');
+  document.getElementById('mAkt').value=m.aktywna?'tak':'nie';
+  document.getElementById('mDelete').style.display='';
+  document.getElementById('mOverlay').classList.add('open');
+}
+function closeMachine(){ document.getElementById('mOverlay').classList.remove('open'); }
+async function saveMachine(){
+  var name=document.getElementById('mName').value.trim();
+  if(!name){ toast('Podaj nazwę maszyny','err'); return; }
+  var f={ Title:name, Model:document.getElementById('mModel').value.trim(), Czynnosc:document.getElementById('mCzyn').value, Aktywna:document.getElementById('mAkt').value==='tak' };
+  var btn=document.getElementById('mSave'); btn.disabled=true; btn.textContent='Zapisywanie…';
+  try{
+    if(editMachine){ await gPatch('/sites/'+siteId+'/lists/'+lists['Maszyny']+'/items/'+editMachine._id+'/fields', f); }
+    else{ await gPost('/sites/'+siteId+'/lists/'+lists['Maszyny']+'/items', {fields:f}); }
+    closeMachine(); await reloadMachines(); render(); toast('Zapisano maszynę','ok');
+  }catch(e){ toast('Błąd zapisu: '+e.message,'err'); }
+  btn.disabled=false; btn.textContent='Zapisz';
+}
+async function deleteMachine(){
+  if(!editMachine) return; if(!confirm('Usunąć maszynę '+editMachine.name+'?')) return;
+  try{ await gDelete('/sites/'+siteId+'/lists/'+lists['Maszyny']+'/items/'+editMachine._id); closeMachine(); await reloadMachines(); render(); toast('Usunięto','ok'); }
+  catch(e){ toast('Błąd usuwania','err'); }
+}
 
 // ====== task modal ======
 function fillSel(id,arr,val){ var s=document.getElementById(id); s.innerHTML=''; arr.forEach(function(o){ var op=document.createElement('option'); op.value=o.v; op.textContent=o.t; if(o.v===val)op.selected=true; s.appendChild(op); }); }
