@@ -630,7 +630,7 @@ function renderWorkerMachines(selected){
   if(!machines.length){ box.innerHTML="<span class='muted' style='font-size:12px'>Brak maszyn — dodaj je w zakładce Maszyny.</span>"; return; }
   box.innerHTML=machines.filter(function(m){return m.aktywna;}).map(function(m){
     var on=selected.indexOf(m.name)!==-1;
-    return "<label style='display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer'><input type='checkbox' value='"+esc(m.name)+"' "+(on?'checked':'')+"> "+esc(m.name)+(m.model?" <span class='muted' style='font-size:11px'>("+esc(m.model)+")</span>":"")+"</label>";
+    return "<label style='display:grid;grid-template-columns:18px 1fr;align-items:start;gap:9px;font-size:13px;line-height:1.35;cursor:pointer'><input type='checkbox' style='margin-top:2px' value='"+esc(m.name)+"' "+(on?'checked':'')+"><span>"+esc(m.name)+(m.model?" <span class='muted' style='font-size:11px'>("+esc(m.model)+")</span>":"")+"</span></label>";
   }).join('');
 }
 function selectedMachines(){ return Array.prototype.slice.call(document.querySelectorAll('#wMach input:checked')).map(function(c){return c.value;}); }
