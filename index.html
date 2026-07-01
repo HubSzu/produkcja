@@ -137,12 +137,14 @@ table.grid thead th{position:sticky;top:0;background:var(--panel);z-index:2;padd
     <div class="tabs">
       <button data-v="board" class="active" onclick="setView('board')">Tablica tygodnia</button>
       <button data-v="day" onclick="setView('day')">Plan na dzień</button>
+      <button data-v="load" onclick="setView('load')">Obciążenie</button>
       <button data-v="proj" onclick="setView('proj')">Projekty</button>
       <button data-v="team" onclick="setView('team')">Zespół</button>
       <button data-v="mach" onclick="setView('mach')">Maszyny</button>
     </div>
     <div class="view active" id="view-board"></div>
     <div class="view" id="view-day"></div>
+    <div class="view" id="view-load"></div>
     <div class="view" id="view-proj"></div>
     <div class="view" id="view-team"></div>
     <div class="view" id="view-mach"></div>
@@ -288,7 +290,7 @@ async function listItems(siteId,listId,select){ var d=await gGet('/sites/'+siteI
 
 // ====== STATE ======
 var siteId=null, docSiteId=null, lists={}, projects=[], workers=[], acts=[], tasks=[], machines=[];
-var weekStart=null, dayISO=null, view='board', editTask=null, tStatus='Do zrobienia', editMachine=null;
+var weekStart=null, dayISO=null, view='board', editTask=null, tStatus='Do zrobienia', editMachine=null, projSel=null;
 var MISSING=[];
 
 async function boot(){
@@ -352,6 +354,7 @@ function todayISO(){ return fmtISO(new Date()); }
 function taskDate(t){ return (t.Dzien||'').split('T')[0]; }
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
 function projByNum(n){ return projects.filter(function(p){return p.Numer===n;})[0]||null; }
+function worker(login){ return workers.filter(function(w){return w.login===login;})[0]||null; }
 function colorFor(n){ var h=0; n=String(n||''); for(var i=0;i<n.length;i++) h=(h*31+n.charCodeAt(i))%360; return 'hsl('+h+',55%,45%)'; }
 function statusClass(s){ s=s||''; if(s==='W toku')return'wip'; if(s==='Gotowe')return'done'; if(s==='Wstrzymane')return'hold'; return'todo'; }
 
@@ -360,7 +363,8 @@ function activeWorkers(){ return workers.filter(function(w){ return w.aktywny; }
 function setView(v){ view=v; document.querySelectorAll('.tabs button').forEach(function(b){b.classList.toggle('active',b.dataset.v===v);});
   document.querySelectorAll('.view').forEach(function(e){e.classList.remove('active');});
   document.getElementById('view-'+v).classList.add('active'); render(); }
-function render(){ if(view==='board')renderBoard(); else if(view==='day')renderDay(); else if(view==='proj')renderProj(); else if(view==='team')renderTeam(); else if(view==='mach')renderMachines(); }
+var DAY_CAP=8; // dostępność godzin na pracownika / dzień
+function render(){ if(view==='board')renderBoard(); else if(view==='day')renderDay(); else if(view==='load')renderLoad(); else if(view==='proj')renderProj(); else if(view==='team')renderTeam(); else if(view==='mach')renderMachines(); }
 function weekDays(){ var a=[]; for(var i=0;i<5;i++)a.push(addDays(weekStart,i)); return a; }
 
 function renderBoard(){
@@ -447,17 +451,79 @@ function copyDay(){
   navigator.clipboard.writeText(out).then(function(){toast('Skopiowano plan','ok');},function(){prompt('Skopiuj:',out);});
 }
 
+// ====== OBCIĄŻENIE ======
+function dayLoad(login,iso){ return tasks.filter(function(t){ return t.PracownikLogin===login && taskDate(t)===iso && t.Status!=='Gotowe'; }).reduce(function(s,t){ return s+(parseFloat(t.SzacGodziny)||0); },0); }
+function loadColor(h){ if(h<=0) return ''; var r=h/DAY_CAP; if(r>1) return 'background:#fbeae6;color:#b4452f;font-weight:700'; if(r>=0.85) return 'background:#fcf3e0;color:#9a6a12;font-weight:600'; return 'background:#e6f4ec;color:#1f8a52'; }
+function weekShift(n){ weekStart=addDays(weekStart,n); render(); }
+function weekToday(){ weekStart=startOfWeek(new Date()); render(); }
+function renderLoad(){
+  var el=document.getElementById('view-load'); var days=weekDays();
+  var h="<div class='row' style='margin-bottom:10px'><button class='btn sm' onclick='weekShift(-7)'>‹</button><button class='btn sm' onclick='weekToday()'>Bieżący tydzień</button><button class='btn sm' onclick='weekShift(7)'>›</button>"+
+    "<b style='margin-left:8px'>Obciążenie · tydzień "+weekStart.getDate()+"–"+days[4].getDate()+" "+MONTHS[days[4].getMonth()]+"</b><span style='flex:1'></span><span class='muted' style='font-size:12px'>dostępność "+DAY_CAP+" h/dzień</span></div>";
+  h+="<div class='board'><table class='grid'><thead><tr><th class='stcol'>Pracownik</th>";
+  days.forEach(function(d){ h+="<th style='text-align:center'><div class='dayhdr'><b>"+DAYS_SHORT[d.getDay()]+"</b> <span class='dn'>"+d.getDate()+"."+String(d.getMonth()+1).padStart(2,'0')+"</span></div></th>"; });
+  h+="<th style='text-align:center'>Razem</th><th style='text-align:center'>Wolne</th></tr></thead><tbody>";
+  var aw=activeWorkers();
+  if(!aw.length) h+="<tr><td colspan='8' class='muted' style='padding:18px'>Brak pracowników.</td></tr>";
+  var cur=null;
+  aw.forEach(function(w){
+    if(w.dzial!==cur){ cur=w.dzial; h+="<tr class='teamrow "+(w.dzial==='Montaż'?'mont':'')+"'><td colspan='8'>"+esc(w.dzial)+"</td></tr>"; }
+    var tot=0, cells='';
+    days.forEach(function(d){ var iso=fmtISO(d); var hh=dayLoad(w.login,iso); tot+=hh;
+      cells+="<td style='text-align:center;"+loadColor(hh)+"'>"+(hh?(Math.round(hh*10)/10)+' h':'·')+"</td>"; });
+    var cap=days.length*DAY_CAP, free=Math.max(0,cap-tot);
+    h+="<tr><td class='stcol'><div class='nm'>"+esc(w.name)+"</div><div class='role'>"+esc(w.stanowisko)+"</div></td>"+cells+
+      "<td style='text-align:center;font-weight:700'>"+(tot?(Math.round(tot*10)/10)+' h':'·')+"</td>"+
+      "<td style='text-align:center;font-weight:700;color:"+(free>0?'#1f8a52':'#6b7785')+"'>"+(free>0?(Math.round(free*10)/10)+' h':'—')+"</td></tr>";
+  });
+  h+="</tbody></table></div>";
+  h+="<p class='muted' style='font-size:12px;margin-top:10px'>Zielony = jest wolne miejsce, pomarańczowy = dzień prawie pełny, czerwony = przeładowanie ponad "+DAY_CAP+" h. „Wolne” = rezerwa godzin w tygodniu (komu można jeszcze dołożyć). Liczone z zadań niezakończonych.</p>";
+  el.innerHTML=h;
+}
+
 function renderProj(){
+  if(projSel) return renderProjDetail();
   var el=document.getElementById('view-proj');
   var open=projects.filter(isOpen);
-  var h="<div class='row' style='margin-bottom:10px'><b>Projekty otwarte ("+open.length+")</b><span style='flex:1'></span><span class='muted' style='font-size:12px'>źródło: Lista_Projektow</span></div>";
-  h+="<div class='panel' style='overflow:hidden'><table class='ptable'><thead><tr><th>Numer</th><th>Nazwa</th><th>Klient</th><th>Status</th><th>Dokumentacja</th></tr></thead><tbody>";
-  if(!open.length) h+="<tr><td colspan='5' style='text-align:center;padding:22px' class='muted'>Brak otwartych projektów.</td></tr>";
-  open.forEach(function(p){ h+="<tr><td><b>"+esc(p.Numer)+"</b></td><td>"+esc(p.Nazwa||'')+"</td><td>"+esc(p.Klient||'—')+"</td><td><span class='chip "+statusClass(p.Status)+"'>"+esc(p.Status||'')+"</span></td>"+
-    "<td><button class='docbtn' onclick='openDocs(\""+esc(p.Numer)+"\")'>📄 Otwórz folder</button></td></tr>"; });
+  var h="<div class='row' style='margin-bottom:10px'><b>Projekty otwarte ("+open.length+")</b><span style='flex:1'></span><span class='muted' style='font-size:12px'>kliknij projekt, by zobaczyć i przypisać zespół</span></div>";
+  h+="<div class='panel' style='overflow:hidden'><table class='ptable'><thead><tr><th>Numer</th><th>Nazwa</th><th>Klient</th><th>Status</th><th>Zespół / zadania</th><th>Dokumentacja</th></tr></thead><tbody>";
+  if(!open.length) h+="<tr><td colspan='6' style='text-align:center;padding:22px' class='muted'>Brak otwartych projektów.</td></tr>";
+  open.forEach(function(p){
+    var pt=tasks.filter(function(t){return t.NumerProjektu===p.Numer;});
+    var ppl={}; pt.forEach(function(t){ if(t.PracownikLogin) ppl[t.PracownikLogin]=1; });
+    var nppl=Object.keys(ppl).length;
+    h+="<tr style='cursor:pointer' onclick='openProjDetail(\""+esc(p.Numer)+"\")'><td><b>"+esc(p.Numer)+"</b></td><td>"+esc(p.Nazwa||'')+"</td><td>"+esc(p.Klient||'—')+"</td><td><span class='chip "+statusClass(p.Status)+"'>"+esc(p.Status||'')+"</span></td>"+
+      "<td class='muted' style='font-size:12px'>"+(pt.length? nppl+" os. · "+pt.length+" zad." : "—")+"</td>"+
+      "<td><button class='docbtn' onclick='event.stopPropagation();openDocs(\""+esc(p.Numer)+"\")'>📄 Otwórz folder</button></td></tr>"; });
   h+="</tbody></table></div>";
   el.innerHTML=h;
 }
+function openProjDetail(numer){ projSel=numer; renderProj(); }
+function closeProjDetail(){ projSel=null; renderProj(); }
+function renderProjDetail(){
+  var el=document.getElementById('view-proj'); var p=projByNum(projSel);
+  var list=tasks.filter(function(t){ return t.NumerProjektu===projSel; });
+  var h="<div class='row' style='margin-bottom:10px'><button class='btn sm' onclick='closeProjDetail()'>‹ Wszystkie projekty</button><span style='flex:1'></span>"+
+    (p&&p.Numer?"<button class='btn sm' onclick='openDocs(\""+esc(p.Numer)+"\")'>📄 Dokumentacja</button>":"")+
+    "<button class='btn sm primary' onclick='newTask(null,null,\""+esc(projSel)+"\")'>+ Przypisz zadanie</button></div>";
+  h+="<div class='panel' style='padding:14px 16px;margin-bottom:12px'><div style='font-size:12px;font-weight:700;color:var(--muted)'>"+esc(projSel)+"</div><div style='font-size:17px;font-weight:700'>"+esc(p?p.Nazwa:'(projekt spoza listy)')+"</div>"+
+    "<div class='muted' style='font-size:13px;margin-top:2px'>"+(p?esc(p.Klient||''):'')+(p&&p.Status?" · "+esc(p.Status):'')+"</div></div>";
+  // grupowanie po pracowniku
+  var byW={}; list.forEach(function(t){ var k=t.PracownikLogin||'(nieprzypisane)'; (byW[k]=byW[k]||[]).push(t); });
+  var keys=Object.keys(byW).sort();
+  var totH=list.reduce(function(s,t){return s+(parseFloat(t.SzacGodziny)||0);},0);
+  h+="<div class='row' style='margin-bottom:8px'><b>Zespół projektu ("+keys.length+" os.) · "+list.length+" zadań · "+(Math.round(totH*10)/10)+" h</b></div>";
+  if(!list.length) h+="<div class='setupbox'>Brak przypisanych zadań. Kliknij „+ Przypisz zadanie”, aby dodać pierwszą osobę do tego projektu.</div>";
+  keys.forEach(function(k){
+    var w=worker(k); var arr=byW[k]; var wh=arr.reduce(function(s,t){return s+(parseFloat(t.SzacGodziny)||0);},0);
+    h+="<div class='panel' style='overflow:hidden;margin-bottom:10px'><div style='padding:8px 12px;background:var(--prodbg);display:flex;justify-content:space-between'><b>"+esc(w?w.name:k)+"</b><span class='muted' style='font-size:12px'>"+(w?esc(w.stanowisko||''):'')+" · "+(Math.round(wh*10)/10)+" h</span></div>";
+    h+="<table class='ptable'><tbody>";
+    arr.forEach(function(t){ h+="<tr style='cursor:pointer' onclick='openTask(\""+t._id+"\")'><td style='width:30%'>"+esc(t.Title||'')+"</td><td class='muted' style='font-size:12px'>"+esc(t.Czynnosc||'')+"</td><td style='font-size:12px'>"+(taskDate(t)? fmtShort(taskDate(t)):'—')+"</td><td style='font-size:12px'>"+(t.PlanowanaIlosc?esc(t.PlanowanaIlosc+' '+(t.Jednostka||'szt')):'')+(t.SzacGodziny?' · '+t.SzacGodziny+'h':'')+"</td><td><span class='chip "+statusClass(t.Status)+"'>"+esc(t.Status||'')+"</span></td></tr>"; });
+    h+="</tbody></table></div>";
+  });
+  el.innerHTML=h;
+}
+function fmtShort(iso){ var d=parseISO(iso); return DAYS_SHORT[d.getDay()]+' '+d.getDate()+'.'+String(d.getMonth()+1).padStart(2,'0'); }
 async function openDocs(numer){
   if(!docSiteId){ toast('Brak dostępu do site ProjektyS360','err'); return; }
   toast('Szukam folderu projektu…','info');
@@ -638,11 +704,13 @@ async function deleteMachine(){
 function fillSel(id,arr,val){ var s=document.getElementById(id); s.innerHTML=''; arr.forEach(function(o){ var op=document.createElement('option'); op.value=o.v; op.textContent=o.t; if(o.v===val)op.selected=true; s.appendChild(op); }); }
 function setTStatus(s){ tStatus=s; document.querySelectorAll('#tStatus button').forEach(function(b){b.classList.toggle('on',b.dataset.s===s);}); }
 document.addEventListener('click',function(e){ var b=e.target.closest('#tStatus button'); if(b) setTStatus(b.dataset.s); });
-function newTask(login,iso){
+function newTask(login,iso,numer){
   if(!projects.length){ toast('Brak projektów w Lista_Projektow','err'); return; }
   editTask=null; document.getElementById('taskTitle').textContent='Nowe zadanie';
-  fillSel('tProject', projects.filter(isOpen).map(function(p){return{v:p.Numer,t:p.Numer+' · '+(p.Nazwa||'')};}), null);
-  fillSel('tWorker', workers.map(function(w){return{v:w.login,t:w.dzial+' — '+w.name};}), login||(workers[0]&&workers[0].login));
+  var plist=projects.filter(isOpen).map(function(p){return{v:p.Numer,t:p.Numer+' · '+(p.Nazwa||'')};});
+  if(numer && !plist.some(function(o){return o.v===numer;})){ var pp=projByNum(numer); plist.unshift({v:numer,t:numer+(pp?' · '+(pp.Nazwa||''):'')}); }
+  fillSel('tProject', plist, numer||null);
+  fillSel('tWorker', activeWorkers().map(function(w){return{v:w.login,t:w.dzial+' — '+w.name};}), login||(activeWorkers()[0]&&activeWorkers()[0].login));
   fillSel('tAct', acts.map(function(a){return{v:a,t:a};}), acts[0]);
   document.getElementById('tTitle').value=''; document.getElementById('tDate').value=iso||todayISO();
   document.getElementById('tHours').value=''; document.getElementById('tQty').value=''; document.getElementById('tUnit').value='szt';
