@@ -114,6 +114,49 @@ table.grid thead th{position:sticky;top:0;background:var(--panel);z-index:2;padd
 .ptab .psm{font-size:10px;color:#555}
 .psig{margin-top:22px;font-size:12px;color:#333}
 @media print{ .hdr,.status,.wrap,.overlay,.toast{display:none!important} #printArea{position:static;left:0} body{background:#fff} }
+/* ===== KIOSK ===== */
+#kioskRoot{position:fixed;inset:0;background:#f4f6f8;z-index:200;overflow:auto;display:flex;flex-direction:column}
+.kbar{background:var(--accent);color:#fff;display:flex;align-items:center;gap:14px;padding:14px 22px}
+.kbar .kb{font-weight:800;font-size:18px}
+.kbar .ksp{flex:1}
+.kbar button{border:1px solid rgba(255,255,255,.35);background:transparent;color:#fff;padding:12px 20px;border-radius:10px;font-weight:700;font-size:16px}
+.kbody{flex:1;max-width:1100px;width:100%;margin:0 auto;padding:22px}
+.kh{font-size:30px;font-weight:800;text-align:center;margin:10px 0 22px}
+.kppl{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px}
+.kperson{background:#fff;border:1px solid var(--line);border-radius:16px;padding:22px 14px;text-align:center;box-shadow:var(--shadow);cursor:pointer}
+.kperson:active{background:#eef2f6}
+.kav{width:64px;height:64px;border-radius:50%;background:var(--prodbg);color:var(--prod);font-weight:800;font-size:24px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px}
+.kperson .kn{font-weight:800;font-size:19px}
+.kperson .kr{font-size:13px;color:var(--muted);margin-top:3px}
+.kpin{max-width:380px;margin:10px auto;background:#fff;border:1px solid var(--line);border-radius:20px;padding:26px;box-shadow:var(--shadow);text-align:center}
+.kpin h2{font-size:24px;margin-bottom:6px}
+.kdots{font-size:40px;letter-spacing:14px;height:46px;margin:14px 0;color:var(--accent)}
+.kpad{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.kpad button{padding:26px 0;font-size:28px;font-weight:800;border:1px solid var(--line);background:#fff;border-radius:16px}
+.kpad button:active{background:var(--line2)}
+.kerr{color:var(--err);font-weight:700;height:22px;font-size:16px}
+.ktask{background:#fff;border:1px solid var(--line);border-left:6px solid #ccc;border-radius:16px;padding:18px 20px;margin-bottom:14px;box-shadow:var(--shadow);cursor:pointer}
+.ktask:active{background:#f7f9fb}
+.ktask .kp{font-size:14px;font-weight:700;color:var(--muted)}
+.ktask h3{font-size:22px;margin:4px 0 4px}
+.ktask .kmeta{font-size:15px;color:var(--muted)}
+.ktask.kdone{opacity:.55}
+.kbig{font-size:19px;font-weight:800;padding:16px 22px;border-radius:14px;border:0;cursor:pointer}
+.kbig.go{background:var(--ok);color:#fff}.kbig.gray{background:#e3e8ee;color:var(--ink)}.kbig.warn{background:var(--warn);color:#fff}
+.kfield{margin-bottom:16px}
+.kfield label{display:block;font-size:15px;font-weight:700;color:var(--muted);margin-bottom:7px}
+.kstep{display:flex;align-items:center;gap:14px}
+.kstep button{width:60px;height:60px;border-radius:14px;border:1px solid var(--line);background:#fff;font-size:30px;font-weight:800}
+.kstep .kval{flex:1;text-align:center;font-size:30px;font-weight:800}
+.kstat{display:flex;gap:12px}
+.kstat button{flex:1;padding:18px;border-radius:14px;border:2px solid var(--line);background:#fff;font-size:18px;font-weight:700;color:var(--muted)}
+.kstat button.on{border-color:transparent;color:#fff}
+.kstat button.on.done{background:var(--ok)}.kstat button.on.wip{background:var(--wip)}
+.kreasons{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.kreasons button{padding:15px;border:2px solid var(--line);background:#fff;border-radius:12px;font-size:15px;font-weight:600}
+.kreasons button.on{border-color:var(--warn);background:var(--warnbg)}
+.ktoast{position:fixed;left:50%;bottom:40px;transform:translateX(-50%);background:var(--ok);color:#fff;padding:16px 28px;border-radius:12px;font-size:20px;font-weight:800;z-index:300;display:none}
+.ktoast.show{display:block}
 </style>
 </head>
 <body>
@@ -125,6 +168,8 @@ table.grid thead th{position:sticky;top:0;background:var(--panel);z-index:2;padd
   <button id="btnLogout" onclick="signOut()" style="display:none">Wyloguj</button>
 </div>
 <div class="status"><span class="dot" id="sdot"></span><span id="stext">Łączenie z Microsoft 365…</span></div>
+
+<div id="kioskRoot" style="display:none"></div>
 
 <div class="wrap">
   <div class="login" id="login" style="display:none">
@@ -188,9 +233,10 @@ table.grid thead th{position:sticky;top:0;background:var(--panel);z-index:2;padd
       <div class="field"><label>Dział</label><select id="wDzial"><option>Produkcja</option><option>Montaż</option></select></div>
     </div>
     <div class="field"><label>Stanowisko</label><input id="wStan" placeholder="np. Spawacz"></div>
-    <div class="f2">
-      <div class="field"><label>PIN (4 cyfry, opcjonalnie)</label><input id="wPin" type="text" inputmode="numeric" maxlength="6" placeholder="np. 1234"></div>
+    <div class="f3">
+      <div class="field"><label>PIN (opcjonalnie)</label><input id="wPin" type="text" inputmode="numeric" maxlength="6" placeholder="np. 1234"></div>
       <div class="field"><label>Aktywny</label><select id="wAkt"><option value="tak">Tak</option><option value="nie">Nie</option></select></div>
+      <div class="field"><label>Język (kiosk)</label><select id="wLang"><option value="pl">Polski</option><option value="uk">Українська</option><option value="es">Español</option><option value="en">English</option></select></div>
     </div>
     <div class="field"><label>Obsługiwane maszyny (kompetencje)</label><div id="wMach" style="display:flex;flex-direction:column;gap:5px;border:1px solid var(--line);border-radius:8px;padding:9px 11px;max-height:170px;overflow:auto"></div></div>
     <p class="muted" style="font-size:11.5px">PIN jest zapisywany jako bezpieczny skrót (hash), nie jako jawna liczba. Zostaw puste, jeśli ustawicie PIN-y później.</p>
@@ -334,7 +380,8 @@ async function boot(){
     try{ docSiteId = await getSiteId(DOC_PATH); }catch(e){ docSiteId=null; }
     var openP = projects.filter(isOpen).length;
     setStatus('ok','Połączono — '+openP+' otwartych projektów, '+activeWorkers().length+' pracowników'+(MISSING.length?' · UWAGA: brak list '+MISSING.join(', '):''));
-    render();
+    if(isKiosk){ document.getElementById('app').style.display='none'; document.getElementById('kioskRoot').style.display='flex'; kHome(); }
+    else render();
   }catch(e){ setStatus('err','Błąd: '+e.message); }
 }
 async function loadTasks(){
@@ -571,7 +618,7 @@ function newWorker(){
   editWorker=null; document.getElementById('wTitle').textContent='Nowy pracownik';
   document.getElementById('wName').value=''; document.getElementById('wLogin').value=''; document.getElementById('wLogin').dataset.touched='';
   document.getElementById('wDzial').value='Produkcja'; document.getElementById('wStan').value='';
-  document.getElementById('wPin').value=''; document.getElementById('wAkt').value='tak';
+  document.getElementById('wPin').value=''; document.getElementById('wAkt').value='tak'; document.getElementById('wLang').value='pl';
   renderWorkerMachines([]);
   document.getElementById('wDelete').style.display='none';
   document.getElementById('wOverlay').classList.add('open');
@@ -582,7 +629,7 @@ function openWorker(id){
   document.getElementById('wTitle').textContent='Edytuj pracownika';
   document.getElementById('wName').value=w.name||''; document.getElementById('wLogin').value=w.login||''; document.getElementById('wLogin').dataset.touched='1';
   document.getElementById('wDzial').value=w.dzial||'Produkcja'; document.getElementById('wStan').value=w.stanowisko||'';
-  document.getElementById('wPin').value=''; document.getElementById('wAkt').value=w.aktywny?'tak':'nie';
+  document.getElementById('wPin').value=''; document.getElementById('wAkt').value=w.aktywny?'tak':'nie'; document.getElementById('wLang').value=w.jezyk||'pl';
   renderWorkerMachines(w.machines||[]);
   document.getElementById('wDelete').style.display='';
   document.getElementById('wOverlay').classList.add('open');
@@ -594,7 +641,7 @@ async function saveWorker(){
   if(!name||!login){ toast('Podaj imię i login','err'); return; }
   var dup=workers.filter(function(w){ return w.login.toLowerCase()===login.toLowerCase() && (!editWorker||w._id!==editWorker._id); }).length;
   if(dup){ toast('Login „'+login+'" już istnieje','err'); return; }
-  var f={ Title:login, ImieNazwisko:name, Dzial:document.getElementById('wDzial').value, Stanowisko:document.getElementById('wStan').value.trim(), Aktywny:document.getElementById('wAkt').value==='tak', Maszyny:selectedMachines().join('; ') };
+  var f={ Title:login, ImieNazwisko:name, Dzial:document.getElementById('wDzial').value, Stanowisko:document.getElementById('wStan').value.trim(), Aktywny:document.getElementById('wAkt').value==='tak', Jezyk:document.getElementById('wLang').value, Maszyny:selectedMachines().join('; ') };
   var pin=document.getElementById('wPin').value.trim();
   var btn=document.getElementById('wSave'); btn.disabled=true; btn.textContent='Zapisywanie…';
   try{
@@ -610,7 +657,7 @@ async function deleteWorker(){
   try{ await gDelete('/sites/'+siteId+'/lists/'+lists['Pracownicy_Produkcji']+'/items/'+editWorker._id); closeWorker(); await reloadWorkers(); render(); toast('Usunięto','ok'); }
   catch(e){ toast('Błąd usuwania','err'); }
 }
-function mapWorker(x){ return {_id:x._id, login:x.Title, name:x.ImieNazwisko||x.Title, dzial:x.Dzial||'Produkcja', stanowisko:x.Stanowisko||'', aktywny:x.Aktywny!==false, haspin:!!x.PINHash, machines:(x.Maszyny||'').split(';').map(function(s){return s.trim();}).filter(Boolean)}; }
+function mapWorker(x){ return {_id:x._id, login:x.Title, name:x.ImieNazwisko||x.Title, dzial:x.Dzial||'Produkcja', stanowisko:x.Stanowisko||'', aktywny:x.Aktywny!==false, haspin:!!x.PINHash, pinhash:x.PINHash||'', jezyk:x.Jezyk||'pl', machines:(x.Maszyny||'').split(';').map(function(s){return s.trim();}).filter(Boolean)}; }
 async function reloadWorkers(){
   var w = await listItems(siteId,lists['Pracownicy_Produkcji']);
   workers = w.filter(function(x){ return x.Title; }).map(mapWorker);
@@ -759,6 +806,143 @@ async function deleteTask(){
   catch(e){ toast('Błąd usuwania','err'); }
 }
 function toast(m,c){ var t=document.getElementById('toast'); t.className='toast '+(c||'info')+' show'; t.textContent=m; setTimeout(function(){t.className='toast';},1800); }
+
+// ====== KIOSK (Faza 2) ======
+var isKiosk = /[?&]kiosk=1/.test(location.search);
+var KLANG='pl', kUser=null, kPin='', kPinFor=null, kTask=null, kQty=0, kMin=0, kDown=0, kReason='', kStat='Gotowe', kNoteVal='';
+var KT={
+ pick:{pl:'Wybierz siebie',uk:'Оберіть себе',es:'Selecciona tu nombre',en:'Select yourself'},
+ pin:{pl:'Wpisz PIN',uk:'Введіть PIN',es:'Introduce el PIN',en:'Enter PIN'},
+ wrong:{pl:'Błędny PIN',uk:'Невірний PIN',es:'PIN incorrecto',en:'Wrong PIN'},
+ back:{pl:'Wróć',uk:'Назад',es:'Volver',en:'Back'},
+ logout:{pl:'Wyloguj',uk:'Вийти',es:'Salir',en:'Log out'},
+ hi:{pl:'Cześć',uk:'Привіт',es:'Hola',en:'Hi'},
+ tasks:{pl:'Twoje zadania na dziś',uk:'Ваші завдання на сьогодні',es:'Tus tareas de hoy',en:'Your tasks today'},
+ notasks:{pl:'Brak zadań na dziś',uk:'Немає завдань на сьогодні',es:'No hay tareas hoy',en:'No tasks today'},
+ report:{pl:'Zgłoś wykonanie',uk:'Звітувати',es:'Reportar',en:'Report'},
+ qty:{pl:'Wykonana ilość',uk:'Виконана кількість',es:'Cantidad hecha',en:'Quantity done'},
+ timew:{pl:'Czas pracy (min)',uk:'Час роботи (хв)',es:'Tiempo de trabajo (min)',en:'Work time (min)'},
+ down:{pl:'Przestój (min)',uk:'Простій (хв)',es:'Parada (min)',en:'Downtime (min)'},
+ reason:{pl:'Powód przestoju',uk:'Причина простою',es:'Motivo de parada',en:'Downtime reason'},
+ notes:{pl:'Uwagi (opcjonalnie)',uk:'Примітки (необов.)',es:'Notas (opcional)',en:'Notes (optional)'},
+ status:{pl:'Status',uk:'Статус',es:'Estado',en:'Status'},
+ sdone:{pl:'Gotowe',uk:'Готово',es:'Terminado',en:'Done'},
+ swip:{pl:'W toku',uk:'В процесі',es:'En curso',en:'In progress'},
+ save:{pl:'Zapisz',uk:'Зберегти',es:'Guardar',en:'Save'},
+ cancel:{pl:'Anuluj',uk:'Скасувати',es:'Cancelar',en:'Cancel'},
+ saved:{pl:'Zapisano ✓',uk:'Збережено ✓',es:'Guardado ✓',en:'Saved ✓'},
+ plan:{pl:'Plan',uk:'План',es:'Plan',en:'Plan'}
+};
+var KREASONS=[
+ {pl:'Brak materiału',uk:'Немає матеріалу',es:'Falta de material',en:'No material'},
+ {pl:'Awaria maszyny',uk:'Поломка машини',es:'Avería de máquina',en:'Machine breakdown'},
+ {pl:'Oczekiwanie na inny dział',uk:'Очікування іншого відділу',es:'Espera de otro dpto.',en:'Waiting for another dept.'},
+ {pl:'Brak dokumentacji',uk:'Немає документації',es:'Falta documentación',en:'Missing docs'},
+ {pl:'Przerwa',uk:'Перерва',es:'Descanso',en:'Break'},
+ {pl:'Inne',uk:'Інше',es:'Otro',en:'Other'}
+];
+function kt(k){ return (KT[k]&&(KT[k][KLANG]||KT[k].pl))||k; }
+function kInit(name){ var p=(name||'').split(' '); return ((p[0]||'')[0]||'')+((p[1]||'')[0]||''); }
+function kRoot(){ return document.getElementById('kioskRoot'); }
+function kToast(m){ var t=document.getElementById('ktoast'); if(!t){t=document.createElement('div');t.id='ktoast';t.className='ktoast';document.body.appendChild(t);} t.textContent=m; t.classList.add('show'); setTimeout(function(){t.classList.remove('show');},1600); }
+
+function kHome(){
+  KLANG='pl'; kUser=null; kPin=''; kPinFor=null;
+  var aw=activeWorkers();
+  var h="<div class='kbar'><div class='kb'>Structura360</div><div class='ksp'></div></div><div class='kbody'>";
+  h+="<div class='kh'>Wybierz siebie<br><span style='font-size:16px;color:#8a94a0'>Оберіть себе · Selecciona tu nombre · Select yourself</span></div>";
+  h+="<div class='kppl'>";
+  aw.forEach(function(w){ h+="<div class='kperson' onclick=\"kOpenPin('"+w.login+"')\"><div class='kav'>"+esc(kInit(w.name))+"</div><div class='kn'>"+esc(w.name)+"</div><div class='kr'>"+esc(w.stanowisko||'')+"</div></div>"; });
+  h+="</div></div>";
+  kRoot().innerHTML=h;
+}
+function kOpenPin(login){ kPinFor=login; kPin=''; kPinScreen(''); }
+function kPinScreen(err){
+  var w=worker(kPinFor); var dots=''; for(var i=0;i<4;i++) dots+= i<kPin.length?'●':'○';
+  var h="<div class='kbar'><div class='kb'>Structura360</div><div class='ksp'></div><button onclick='kHome()'>‹ "+kt('back')+"</button></div><div class='kbody'>";
+  h+="<div class='kpin'><h2>"+esc(w?w.name:'')+"</h2><div style='color:#8a94a0'>"+kt('pin')+"</div><div class='kdots'>"+dots+"</div><div class='kerr'>"+(err||'')+"</div><div class='kpad'>";
+  [1,2,3,4,5,6,7,8,9].forEach(function(n){ h+="<button onclick='kPinKey(\""+n+"\")'>"+n+"</button>"; });
+  h+="<button onclick='kPinKey(\"back\")'>⌫</button><button onclick='kPinKey(\"0\")'>0</button><button onclick='kPinKey(\"ok\")' style='color:var(--ok)'>OK</button>";
+  h+="</div></div></div>";
+  kRoot().innerHTML=h;
+}
+function kPinKey(k){
+  if(k==='back'){ kPin=kPin.slice(0,-1); kPinScreen(''); return; }
+  if(k==='ok'){ kTryPin(); return; }
+  if(kPin.length<4){ kPin+=k; }
+  if(kPin.length===4){ kTryPin(); } else { kPinScreen(''); }
+}
+async function kTryPin(){
+  var w=worker(kPinFor); if(!w) return;
+  var ok = !w.pinhash || (await hashPin(w.login,kPin))===w.pinhash;
+  if(ok){ kUser=w.login; KLANG=w.jezyk||'pl'; kPin=''; kPinFor=null; try{ await reloadTasks(); }catch(e){} kTasks(); }
+  else { kPin=''; kPinScreen(kt('wrong')); }
+}
+function kMyTasks(){ return tasks.filter(function(t){ return t.PracownikLogin===kUser && taskDate(t)===todayISO(); }); }
+function kTasks(){
+  var w=worker(kUser); var list=kMyTasks();
+  var todo=list.filter(function(t){return t.Status!=='Gotowe';}), done=list.filter(function(t){return t.Status==='Gotowe';});
+  var h="<div class='kbar'><div class='kb'>"+kt('hi')+", "+esc(w?w.name.split(' ')[0]:'')+"</div><div class='ksp'></div><button onclick='kHome()'>"+kt('logout')+" →</button></div><div class='kbody'>";
+  h+="<div class='kh' style='font-size:24px'>"+kt('tasks')+"</div>";
+  if(!list.length) h+="<div style='text-align:center;color:#8a94a0;font-size:20px;padding:30px'>"+kt('notasks')+"</div>";
+  todo.forEach(function(t){ h+=kTaskCard(t,false); });
+  done.forEach(function(t){ h+=kTaskCard(t,true); });
+  h+="</div>";
+  kRoot().innerHTML=h;
+}
+function kTaskCard(t,isDone){
+  var p=projByNum(t.NumerProjektu), col=p?colorFor(t.NumerProjektu):'#ccc';
+  var meta=kt('plan')+': '+(t.PlanowanaIlosc?t.PlanowanaIlosc+' '+(t.Jednostka||'szt'):'—')+(t.SzacGodziny?' · '+t.SzacGodziny+' h':'');
+  return "<div class='ktask"+(isDone?' kdone':'')+"' style='border-left-color:"+col+"' onclick=\"kOpenReport('"+t._id+"')\">"+
+    (t.NumerProjektu?"<div class='kp'>"+esc(t.NumerProjektu)+(p?' · '+esc(p.Nazwa||''):'')+"</div>":'')+
+    "<h3>"+esc(t.Title||'')+"</h3><div class='kmeta'>"+esc(t.Czynnosc||'')+" · "+esc(meta)+(isDone?' · ✓':'')+"</div></div>";
+}
+function kOpenReport(id){
+  var t=tasks.filter(function(x){return x._id===id;})[0]; if(!t)return; kTask=t;
+  kQty=parseFloat(t.PlanowanaIlosc)||0; kMin=0; kDown=0; kReason=KREASONS[0].pl; kStat='Gotowe'; kNoteVal='';
+  kRenderReport();
+}
+function kRenderReport(){
+  var t=kTask; var p=projByNum(t.NumerProjektu); var unit=t.Jednostka||'szt';
+  var h="<div class='kbar'><div class='kb'>"+kt('report')+"</div><div class='ksp'></div><button onclick='kTasks()'>"+kt('cancel')+"</button></div><div class='kbody' style='max-width:640px'>";
+  h+="<div style='background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:16px'>"+
+     (t.NumerProjektu?"<div class='kp' style='font-size:13px;color:#8a94a0;font-weight:700'>"+esc(t.NumerProjektu)+(p?' · '+esc(p.Nazwa||''):'')+"</div>":'')+
+     "<div style='font-size:21px;font-weight:800'>"+esc(t.Title||'')+"</div><div style='color:#8a94a0'>"+esc(t.Czynnosc||'')+"</div></div>";
+  // ilość
+  h+="<div class='kfield'><label>"+kt('qty')+" ("+esc(unit)+")</label><div class='kstep'><button onclick=\"kAdj('qty',-1)\">−</button><div class='kval' id='kvQty'>"+kQty+"</div><button onclick=\"kAdj('qty',1)\">+</button></div></div>";
+  // czas
+  h+="<div class='kfield'><label>"+kt('timew')+"</label><div class='kstep'><button onclick=\"kAdj('min',-15)\">−</button><div class='kval' id='kvMin'>"+kMin+"</div><button onclick=\"kAdj('min',15)\">+</button></div></div>";
+  // przestój
+  h+="<div class='kfield'><label>"+kt('down')+"</label><div class='kstep'><button onclick=\"kAdj('down',-15)\">−</button><div class='kval' id='kvDown'>"+kDown+"</div><button onclick=\"kAdj('down',15)\">+</button></div></div>";
+  if(kDown>0){ h+="<div class='kfield'><label>"+kt('reason')+"</label><div class='kreasons'>";
+    KREASONS.forEach(function(r,i){ h+="<button class='"+(kReason===r.pl?'on':'')+"' onclick='kSetReason("+i+")'>"+esc(r[KLANG]||r.pl)+"</button>"; }); h+="</div></div>"; }
+  // status
+  h+="<div class='kfield'><label>"+kt('status')+"</label><div class='kstat'>"+
+     "<button class='"+(kStat==='Gotowe'?'on done':'')+"' onclick=\"kSetStat('Gotowe')\">"+kt('sdone')+"</button>"+
+     "<button class='"+(kStat==='W toku'?'on wip':'')+"' onclick=\"kSetStat('W toku')\">"+kt('swip')+"</button></div></div>";
+  // uwagi
+  h+="<div class='kfield'><label>"+kt('notes')+"</label><textarea id='kNotes' style='width:100%;min-height:60px;border:1px solid var(--line);border-radius:12px;padding:12px;font-size:16px'>"+esc(kNoteVal)+"</textarea></div>";
+  h+="<div style='display:flex;gap:12px;margin-top:6px'><button class='kbig gray' style='flex:1' onclick='kTasks()'>"+kt('cancel')+"</button><button class='kbig go' style='flex:2' onclick='kSave()'>"+kt('save')+"</button></div>";
+  h+="</div>";
+  kRoot().innerHTML=h;
+}
+function kReadNotes(){ var n=document.getElementById('kNotes'); if(n) kNoteVal=n.value; }
+function kAdj(f,d){ kReadNotes(); if(f==='qty') kQty=Math.max(0,kQty+d); else if(f==='min') kMin=Math.max(0,kMin+d); else if(f==='down') kDown=Math.max(0,kDown+d); kRenderReport(); }
+function kSetReason(i){ kReadNotes(); kReason=KREASONS[i].pl; kRenderReport(); }
+function kSetStat(s){ kReadNotes(); kStat=s; kRenderReport(); }
+async function kSave(){
+  kReadNotes(); var t=kTask;
+  if(!lists['Logi_Czasu']){ kToast('Brak listy Logi_Czasu'); return; }
+  var f={ Title:kUser+' · '+(t.Czynnosc||'')+' · '+todayISO(), ZadanieID:String(t._id), PracownikLogin:kUser,
+    NumerProjektu:t.NumerProjektu||'', Czynnosc:t.Czynnosc||'', Stop:new Date().toISOString(),
+    CzasPracyMin:kMin, WykonanaIlosc:kQty, CzasPrzestojuMin:kDown, PowodPrzestoju:kDown>0?kReason:'', Uwaga:kNoteVal };
+  try{
+    await gPost('/sites/'+siteId+'/lists/'+lists['Logi_Czasu']+'/items', {fields:f});
+    if(lists['Zadania_Produkcji']){ try{ await gPatch('/sites/'+siteId+'/lists/'+lists['Zadania_Produkcji']+'/items/'+t._id+'/fields', {Status:kStat}); }catch(e){} }
+    try{ await reloadTasks(); }catch(e){}
+    kToast(kt('saved')); kTasks();
+  }catch(e){ kToast('Błąd zapisu: '+e.message); }
+}
 
 // ====== init ======
 weekStart=startOfWeek(new Date()); dayISO=isoAdd(1);
